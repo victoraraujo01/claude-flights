@@ -73,7 +73,7 @@ If total > 100 requests or estimated time > 5 minutes, warn the user and ask for
 
 ### Step 2: Run the search
 ```bash
-./venv/bin/python3 search_flights.py
+python3 search_flights.py
 ```
 
 The script outputs JSON to stdout and progress to stderr. The search may take several minutes.
