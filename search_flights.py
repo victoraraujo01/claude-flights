@@ -13,9 +13,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 try:
-    from fast_flights import FlightData, Passengers, get_flights
+    from fast_flights import FlightQuery, Passengers, create_query, get_flights
 except ImportError:
-    print("Error: fast-flights is not installed. Run: pip install fast-flights", file=sys.stderr)
+    print("Error: fast-flights is not installed. Run: pip install --pre fast-flights==3.0rc0", file=sys.stderr)
     sys.exit(1)
 
 TRIPS_FILE = Path(__file__).parent / "trips.json"
@@ -61,14 +61,14 @@ def generate_combinations(trip: dict) -> list:
     return combos
 
 
-def parse_price(price_str: str) -> float:
-    """Parse price string like '$523' into a numeric value."""
-    cleaned = price_str.replace("$", "").replace(",", "").strip()
-    try:
-        val = float(cleaned)
-        return val if val > 0 else float("inf")
-    except (ValueError, TypeError):
-        return float("inf")
+def fmt_time(t) -> str:
+    h = t[0] if len(t) > 0 else 0
+    m = t[1] if len(t) > 1 else 0
+    return f"{h:02d}:{m:02d}"
+
+
+def fmt_duration(minutes: int) -> str:
+    return f"{minutes // 60}h {minutes % 60}m"
 
 
 def query_one(trip: dict, combo: dict) -> list:
@@ -78,38 +78,42 @@ def query_one(trip: dict, combo: dict) -> list:
     seat = trip.get("seat_class", "economy")
     passengers = Passengers(adults=trip.get("passengers", 1))
 
-    flight_data = [FlightData(date=combo["departure"], from_airport=origin, to_airport=dest)]
+    flights_list = [FlightQuery(date=combo["departure"], from_airport=origin, to_airport=dest)]
     trip_type = "one-way"
 
     if trip["type"] == "round-trip" and combo["return"]:
-        flight_data.append(FlightData(date=combo["return"], from_airport=dest, to_airport=origin))
+        flights_list.append(FlightQuery(date=combo["return"], from_airport=dest, to_airport=origin))
         trip_type = "round-trip"
 
-    result = get_flights(
-        flight_data=flight_data,
-        trip=trip_type,
+    query = create_query(
+        flights=flights_list,
         seat=seat,
+        trip=trip_type,
         passengers=passengers,
-        fetch_mode="common",
+        currency="BRL",
     )
 
+    result = get_flights(query)
+
     results = []
-    for fl in result.flights:
-        price_num = parse_price(fl.price)
-        if price_num == float("inf"):
-            continue
+    for fl in result:
+        total_duration = sum(f.duration for f in fl.flights)
+        first_leg = fl.flights[0]
+        last_leg = fl.flights[-1]
+        stops = len(fl.flights) - 1
+
         results.append({
             "departure_date": combo["departure"],
             "return_date": combo["return"],
-            "price": fl.price,
-            "price_numeric": price_num,
-            "airline": fl.name,
-            "duration": fl.duration,
-            "stops": fl.stops,
-            "departure_time": fl.departure,
-            "arrival_time": fl.arrival,
-            "arrival_time_ahead": fl.arrival_time_ahead,
-            "is_best": fl.is_best,
+            "price": f"R${fl.price}",
+            "price_numeric": float(fl.price),
+            "airline": ", ".join(fl.airlines) if fl.airlines else "Unknown",
+            "duration": fmt_duration(total_duration),
+            "stops": stops,
+            "departure_time": fmt_time(first_leg.departure.time),
+            "arrival_time": fmt_time(last_leg.arrival.time),
+            "arrival_time_ahead": "",
+            "is_best": False,
         })
 
     return results
@@ -150,34 +154,19 @@ def search_trip(trip: dict) -> dict:
                 no_results += 1
                 print("no results", file=sys.stderr)
 
-        except RuntimeError as e:
-            if "No flights found" in str(e):
-                no_results += 1
-                print("no flights", file=sys.stderr)
-            else:
-                # Retry once after 10s
-                print("error, retrying...", file=sys.stderr, end=" ", flush=True)
-                time.sleep(10)
-                try:
-                    results = query_one(trip, combo)
-                    all_results.extend(results)
-                    successful += 1
-                    print(f"OK ({len(results)} flights)", file=sys.stderr)
-                except Exception as e2:
-                    failed += 1
-                    err_msg = f"Trip {trip['id']}: {desc} - {str(e2)[:100]}"
-                    errors.append(err_msg)
-                    print(f"FAILED: {e2}", file=sys.stderr)
-
         except Exception as e:
             # Retry once after 10s
             print("error, retrying...", file=sys.stderr, end=" ", flush=True)
             time.sleep(10)
             try:
                 results = query_one(trip, combo)
-                all_results.extend(results)
-                successful += 1
-                print(f"OK ({len(results)} flights)", file=sys.stderr)
+                if results:
+                    all_results.extend(results)
+                    successful += 1
+                    print(f"OK ({len(results)} flights)", file=sys.stderr)
+                else:
+                    no_results += 1
+                    print("no results", file=sys.stderr)
             except Exception as e2:
                 failed += 1
                 err_msg = f"Trip {trip['id']}: {desc} - {str(e2)[:100]}"
