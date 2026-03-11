@@ -79,12 +79,12 @@ python3 search_flights.py
 The script outputs JSON to stdout and progress to stderr. The search may take several minutes.
 
 ### Step 3: Present results
-Parse the JSON output and present a structured report with 3 parts:
+Parse the JSON output and present a structured report with 3 parts.
+
+Each combination in `by_combination` already has pre-computed `best_direct` and `best_overall` fields, and `by_airline` contains only the cheapest option per airline — use these directly, no extra processing needed.
 
 #### Part 1: Summary table
-A table with ALL date combinations, sorted by best overall price (ascending). Three columns: the date combination, the cheapest direct flight price, and the cheapest overall price (any number of stops). Mark the best row with bold.
-
-Example:
+ALL combinations sorted by `best_overall.price_numeric` ascending. Mark best row bold.
 
 **Trip 1: NYC to London spring trip (JFK → LHR, round-trip)**
 *12 combinações pesquisadas, 12 com sucesso*
@@ -96,34 +96,25 @@ Example:
 | Mar 20 → Mar 24 | R$1.820 Gol | R$1.319 LATAM (1 esc.) |
 | Mar 21 → Mar 25 | — | R$2.078 LATAM (1 esc.) |
 
-Use "—" when no direct flights exist for a combination.
+Use "—" when `best_direct` is null.
 
 #### Part 2: Detailed breakdown of the best combination
-For the combination with the best overall price, show the full breakdown:
+For the combination with lowest `best_overall.price_numeric`, show the `by_airline` table:
 
 **Melhor combinação: Mar 18 → Mar 24**
 
-*Voos diretos:*
-| Preço | Cia | Saída | Chegada | Duração |
-|-------|-----|-------|---------|---------|
-| R$1.664 | Gol | 08:25 | 11:30 | 3h 5m |
-| R$1.664 | Gol | 22:50 | 01:55 | 3h 5m |
-
-*Por companhia:*
 | Cia | Preço | Saída | Chegada | Duração | Escalas |
 |-----|-------|-------|---------|---------|---------|
-| LATAM | R$1.026 | 09:00 | 16:05 | 4h 25m | 1 |
-| LATAM | R$1.026 | 15:00 | 22:15 | 4h 25m | 1 |
 | Gol | R$1.664 | 08:25 | 11:30 | 3h 5m | 0 |
+| LATAM | R$1.026 | 09:00 | 16:05 | 4h 25m | 1 |
 | Azul | R$2.116 | 20:50 | 02:00 | 3h 45m | 1 |
 
 #### Part 3: Summary and next steps
-At the end, include:
-- A brief summary highlighting the best overall and best direct prices
-- Key observations (e.g. which airlines are cheapest, which dates have no options)
+- Brief highlight of best overall and best direct prices
+- Key observations (cheapest airline, dates with no direct options, etc.)
 - Suggest: "Para ver o detalhamento de outra combinação, diga: `/flights detalhar [data ida] → [data volta]`"
 
-When the user asks to detail a specific combination (e.g. "/flights detalhar Mai 9 → Mai 12"), show the full breakdown (direct + by airline) for that combination only, using the same format as Part 2. Re-run the search if the data is not available in the current conversation.
+When the user asks to detail a specific combination, show its `by_airline` table using the same format as Part 2. Re-run the search if data is not available in the current conversation.
 
 ## Ambiguity Handling
 
