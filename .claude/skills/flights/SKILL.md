@@ -73,10 +73,14 @@ If total > 100 requests or estimated time > 5 minutes, warn the user and ask for
 
 ### Step 2: Run the search
 ```bash
+# Summary mode — all combinations in the date window:
 python3 search_flights.py
+
+# Detail mode — all flights for one specific date combination:
+python3 search_flights.py --detail --trip-id <ID> --departure <YYYY-MM-DD> [--return <YYYY-MM-DD>]
 ```
 
-The script outputs JSON to stdout and progress to stderr. The search may take several minutes.
+The script outputs JSON to stdout and progress to stderr.
 
 ### Step 3: Present results
 Parse the JSON output and present a structured report with 3 parts.
@@ -114,7 +118,22 @@ For the combination with lowest `best_overall.price_numeric`, show the `by_airli
 - Key observations (cheapest airline, dates with no direct options, etc.)
 - Suggest: "Para ver o detalhamento de outra combinação, diga: `/flights detalhar [data ida] → [data volta]`"
 
-When the user asks to detail a specific combination, show its `by_airline` table using the same format as Part 2. Re-run the search if data is not available in the current conversation.
+When the user asks to detail a specific combination (e.g. "/flights detalhar Mai 9 → Mai 12"), **always run detail mode** — never re-use summary data, as it only kept one option per airline:
+
+```bash
+python3 search_flights.py --detail --trip-id <ID> --departure <YYYY-MM-DD> --return <YYYY-MM-DD>
+```
+
+The output has `trip.all_flights`: all options sorted by price. Present as a numbered table:
+
+**Todos os voos — [Label] ([dep] → [ret])**
+*N opções encontradas*
+
+| # | Cia | Preço | Saída | Chegada | Duração | Escalas |
+|---|-----|-------|-------|---------|---------|---------|
+| 1 | LATAM | R$1.848 | 17:55 | 23:45 | 4h 35m | 1 |
+| 2 | LATAM | R$1.941 | 15:00 | 22:15 | 4h 25m | 1 |
+| 3 | Azul | R$2.282 | 06:20 | 13:45 | 3h 50m | 1 |
 
 ## Ambiguity Handling
 

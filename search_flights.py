@@ -5,6 +5,7 @@ Reads trips.json, queries Google Flights via fast-flights, and outputs
 a structured JSON report to stdout. Progress messages go to stderr.
 """
 
+import argparse
 import json
 import random
 import sys
@@ -255,27 +256,97 @@ def search_trip(trip: dict) -> dict:
     }
 
 
-def main():
-    trips = load_trips()
-    total_combos = sum(len(generate_combinations(t)) for t in trips)
-    est_time = total_combos * 3.5  # average 3.5s per request
+def search_detail(trip: dict, departure: str, return_date: str | None) -> dict:
+    """Query all flights for a single specific date combination."""
+    if trip["type"] == "one-way" and return_date is not None:
+        print("Warning: trip is one-way but --return was provided; ignoring.", file=sys.stderr)
+        return_date = None
 
-    print(f"Searching {len(trips)} trip(s), {total_combos} total combinations", file=sys.stderr)
-    print(f"Estimated time: ~{int(est_time)}s ({int(est_time / 60)}m {int(est_time % 60)}s)", file=sys.stderr)
+    combo = {"departure": departure, "return": return_date}
+    label = trip.get("label", f"{trip['origin']}->{trip['destination']}")
+    desc = departure + (f" -> {return_date}" if return_date else "")
 
-    all_errors = []
-    trip_results = []
+    print(f"--- Detail mode: Trip {trip['id']}: {label} ---", file=sys.stderr)
+    print(f"  Querying {desc}...", file=sys.stderr, end=" ", flush=True)
 
-    for trip in trips:
-        result = search_trip(trip)
-        all_errors.extend(result.pop("errors", []))
-        trip_results.append(result)
+    try:
+        results = query_one(trip, combo)
+    except Exception as e:
+        print("error, retrying...", file=sys.stderr, end=" ", flush=True)
+        time.sleep(10)
+        results = query_one(trip, combo)
 
-    report = {
-        "search_time": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-        "trips": trip_results,
-        "errors": all_errors,
+    results_sorted = sorted(results, key=lambda x: x["price_numeric"])
+    for r in results_sorted:
+        r["price"] = f"R${int(r['price_numeric'])}"
+
+    print(f"OK ({len(results_sorted)} flights)", file=sys.stderr)
+
+    return {
+        "id": trip["id"],
+        "label": label,
+        "origin": trip["origin"],
+        "destination": trip["destination"],
+        "type": trip["type"],
+        "departure_date": departure,
+        "return_date": return_date,
+        "total_flights": len(results_sorted),
+        "all_flights": results_sorted,
     }
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Google Flights price search")
+    parser.add_argument("--detail", action="store_true", help="Fetch all flights for a specific date combination")
+    parser.add_argument("--trip-id", type=int, help="Trip ID (required for --detail)")
+    parser.add_argument("--departure", help="Departure date YYYY-MM-DD (required for --detail)")
+    parser.add_argument("--return", dest="return_date", help="Return date YYYY-MM-DD (for round-trips)")
+    args = parser.parse_args()
+
+    if args.detail:
+        if not args.trip_id or not args.departure:
+            parser.error("--detail requires --trip-id and --departure")
+        try:
+            datetime.strptime(args.departure, "%Y-%m-%d")
+            if args.return_date:
+                datetime.strptime(args.return_date, "%Y-%m-%d")
+        except ValueError:
+            parser.error("Dates must be in YYYY-MM-DD format")
+
+        trips = load_trips()
+        trip = next((t for t in trips if t["id"] == args.trip_id), None)
+        if not trip:
+            print(f"Error: trip ID {args.trip_id} not found.", file=sys.stderr)
+            sys.exit(1)
+
+        result = search_detail(trip, args.departure, args.return_date)
+        report = {
+            "mode": "detail",
+            "search_time": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            "trip": result,
+            "errors": [],
+        }
+    else:
+        trips = load_trips()
+        total_combos = sum(len(generate_combinations(t)) for t in trips)
+        est_time = total_combos * 3.5
+
+        print(f"Searching {len(trips)} trip(s), {total_combos} total combinations", file=sys.stderr)
+        print(f"Estimated time: ~{int(est_time)}s ({int(est_time / 60)}m {int(est_time % 60)}s)", file=sys.stderr)
+
+        all_errors = []
+        trip_results = []
+        for trip in trips:
+            result = search_trip(trip)
+            all_errors.extend(result.pop("errors", []))
+            trip_results.append(result)
+
+        report = {
+            "mode": "summary",
+            "search_time": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            "trips": trip_results,
+            "errors": all_errors,
+        }
 
     print(json.dumps(report, indent=2))
 
