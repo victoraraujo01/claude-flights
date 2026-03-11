@@ -9,6 +9,7 @@ import json
 import random
 import sys
 import time
+from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -19,7 +20,8 @@ except ImportError:
     sys.exit(1)
 
 TRIPS_FILE = Path(__file__).parent / "trips.json"
-TOP_N = 5  # number of cheapest results to keep per trip
+PRICE_MARGIN = 100  # R$ margin for price tiers
+MAX_TIERS = 3  # max price tiers per category
 
 
 def load_trips() -> list:
@@ -59,6 +61,24 @@ def generate_combinations(trip: dict) -> list:
             d += timedelta(days=1)
 
     return combos
+
+
+def build_tiers(flights: list) -> list:
+    """Given a list of flights sorted by price, return up to MAX_TIERS price tiers."""
+    if not flights:
+        return []
+    tiers = []
+    remaining = flights[:]
+    while remaining and len(tiers) < MAX_TIERS:
+        base_price = remaining[0]["price_numeric"]
+        tier_max = base_price + PRICE_MARGIN
+        in_tier = [f for f in remaining if f["price_numeric"] <= tier_max]
+        remaining = [f for f in remaining if f["price_numeric"] > tier_max]
+        tiers.append({
+            "price_range": f"R${int(base_price)}–R${int(base_price + PRICE_MARGIN)}",
+            "options": in_tier,
+        })
+    return tiers
 
 
 def fmt_time(t) -> str:
@@ -183,9 +203,36 @@ def search_trip(trip: dict) -> dict:
             seen.add(key)
             unique.append(r)
 
-    # Sort by price and take top N
-    unique.sort(key=lambda x: x["price_numeric"])
-    cheapest = unique[:TOP_N]
+    # Group by date combination and build tiered results
+    combos_map = defaultdict(list)
+    for r in unique:
+        key = (r["departure_date"], r["return_date"])
+        combos_map[key].append(r)
+
+    by_combination = []
+    for (dep, ret), flights in sorted(combos_map.items()):
+        flights_sorted = sorted(flights, key=lambda x: x["price_numeric"])
+
+        # Direct flights category
+        direct_flights = [f for f in flights_sorted if f["stops"] == 0]
+        direct_tiers = build_tiers(direct_flights) or None
+
+        # Per-airline category
+        airlines_map = defaultdict(list)
+        for f in flights_sorted:
+            main_airline = f["airline"].split(",")[0].strip()
+            airlines_map[main_airline].append(f)
+        by_airline = {
+            airline: build_tiers(afl)
+            for airline, afl in sorted(airlines_map.items())
+        }
+
+        by_combination.append({
+            "departure_date": dep,
+            "return_date": ret,
+            "direct": direct_tiers,
+            "by_airline": by_airline,
+        })
 
     return {
         "id": trip["id"],
@@ -197,7 +244,7 @@ def search_trip(trip: dict) -> dict:
         "successful_queries": successful,
         "no_results": no_results,
         "failed_queries": failed,
-        "cheapest": cheapest,
+        "by_combination": by_combination,
         "errors": errors,
     }
 

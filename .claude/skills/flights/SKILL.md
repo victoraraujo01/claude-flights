@@ -79,23 +79,51 @@ python3 search_flights.py
 The script outputs JSON to stdout and progress to stderr. The search may take several minutes.
 
 ### Step 3: Present results
-Parse the JSON output and present a clean markdown report. For each trip:
+Parse the JSON output and present a structured report with 3 parts:
+
+#### Part 1: Summary table
+A table with ALL date combinations, sorted by best overall price (ascending). Three columns: the date combination, the cheapest direct flight price, and the cheapest overall price (any number of stops). Mark the best row with bold.
+
+Example:
 
 **Trip 1: NYC to London spring trip (JFK → LHR, round-trip)**
-| # | Depart | Return | Price | Airline | Duration | Stops |
-|---|--------|--------|-------|---------|----------|-------|
-| 1 | Mar 18 | Mar 24 | $523 | Norse Atlantic | 7h 20m | 0 |
-| 2 | Mar 20 | Mar 26 | $547 | British Airways | 7h 45m | 0 |
-| 3 | Mar 17 | Mar 23 | $589 | Delta | 8h 10m | 1 |
+*12 combinações pesquisadas, 12 com sucesso*
 
-Also mention:
-- How many combinations were searched vs successful
-- Any errors encountered
-- The overall price level if available (low/typical/high)
+| Datas | Melhor direto | Melhor preço |
+|-------|---------------|--------------|
+| **Mar 18 → Mar 24** | **R$1.664 Gol** | **R$1.026 LATAM (1 esc.)** |
+| Mar 19 → Mar 25 | R$1.742 Gol | R$1.026 LATAM (1 esc.) |
+| Mar 20 → Mar 24 | R$1.820 Gol | R$1.319 LATAM (1 esc.) |
+| Mar 21 → Mar 25 | — | R$2.078 LATAM (1 esc.) |
 
-### Highlighting
-- Highlight the **cheapest option per trip** prominently
-- If a trip has no results at all, note it and suggest adjusting dates or airports
+Use "—" when no direct flights exist for a combination.
+
+#### Part 2: Detailed breakdown of the best combination
+For the combination with the best overall price, show the full breakdown:
+
+**Melhor combinação: Mar 18 → Mar 24**
+
+*Voos diretos:*
+| Preço | Cia | Saída | Chegada | Duração |
+|-------|-----|-------|---------|---------|
+| R$1.664 | Gol | 08:25 | 11:30 | 3h 5m |
+| R$1.664 | Gol | 22:50 | 01:55 | 3h 5m |
+
+*Por companhia:*
+| Cia | Preço | Saída | Chegada | Duração | Escalas |
+|-----|-------|-------|---------|---------|---------|
+| LATAM | R$1.026 | 09:00 | 16:05 | 4h 25m | 1 |
+| LATAM | R$1.026 | 15:00 | 22:15 | 4h 25m | 1 |
+| Gol | R$1.664 | 08:25 | 11:30 | 3h 5m | 0 |
+| Azul | R$2.116 | 20:50 | 02:00 | 3h 45m | 1 |
+
+#### Part 3: Summary and next steps
+At the end, include:
+- A brief summary highlighting the best overall and best direct prices
+- Key observations (e.g. which airlines are cheapest, which dates have no options)
+- Suggest: "Para ver o detalhamento de outra combinação, diga: `/flights detalhar [data ida] → [data volta]`"
+
+When the user asks to detail a specific combination (e.g. "/flights detalhar Mai 9 → Mai 12"), show the full breakdown (direct + by airline) for that combination only, using the same format as Part 2. Re-run the search if the data is not available in the current conversation.
 
 ## Ambiguity Handling
 
