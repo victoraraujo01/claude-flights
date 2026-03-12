@@ -16,9 +16,31 @@ from pathlib import Path
 
 try:
     from fast_flights import FlightQuery, Passengers, create_query, get_flights
+    from fast_flights import fetcher as _ff_fetcher
 except ImportError:
     print("Error: fast-flights is not installed. Run: pip install --pre fast-flights==3.0rc0", file=sys.stderr)
     sys.exit(1)
+
+try:
+    import primp as _primp
+
+    def _patched_fetch_html(q, /, *, proxy=None, integration=None):
+        if integration is not None:
+            return integration.fetch_html(q)
+        from fast_flights.querying import Query
+        client = _primp.Client(
+            impersonate="edge_145",
+            impersonate_os="macos",
+            referer=True,
+            proxy=proxy,
+            cookie_store=True,
+        )
+        params = q.params() if isinstance(q, Query) else {"q": q}
+        return client.get(_ff_fetcher.URL, params=params).text
+
+    _ff_fetcher.fetch_flights_html = _patched_fetch_html
+except Exception:
+    pass  # If patch fails, fall back to default behavior
 
 TRIPS_FILE = Path(__file__).parent / "trips.json"
 
